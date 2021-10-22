@@ -3,6 +3,8 @@ package com.hometask2;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.*;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class GarageTests {
@@ -80,10 +82,28 @@ public class GarageTests {
     }
 
     @Test
-    void testAddAndRemoveCar() {
-        garage.addCar(
-                new Car(4, "Toyota", "model4", 150, 250, 2),
-                new Owner(2, "Guy", "Fawkes", 24));
+    void testAddAndRemoveCarCorrectly() {
+        Owner newOwner = new Owner(2, "Guy", "Fawkes", 24);
+        Car newCar = new Car(4, "Toyota", "model4", 150, 250, 2);
+
+        garage.addCar(newCar, newOwner);
+
+        var uniqueOwners = garage.allCarsUniqueOwners();
+        assertEquals(3, uniqueOwners.size());
+        assertTrue(uniqueOwners.contains(OWNERS[0]));
+        assertTrue(uniqueOwners.contains(OWNERS[1]));
+        assertTrue(uniqueOwners.contains(newOwner));
+
         garage.removeCar(4);
+
+        uniqueOwners = garage.allCarsUniqueOwners();
+        assertEquals(2, uniqueOwners.size());
+        assertTrue(uniqueOwners.contains(OWNERS[0]));
+        assertTrue(uniqueOwners.contains(OWNERS[1]));
+    }
+
+    @Test
+    void testRemoveNonExistentCar() {
+        assertThrows(IllegalArgumentException.class, () -> garage.removeCar(4));
     }
 }

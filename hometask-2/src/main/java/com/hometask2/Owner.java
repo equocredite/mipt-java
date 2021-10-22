@@ -28,4 +28,19 @@ public class Owner {
     public int getAge() {
         return age;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        Owner owner = (Owner) o;
+
+        return ownerId == owner.ownerId;
+    }
+
+    @Override
+    public int hashCode() {
+        return (int) (ownerId ^ (ownerId >>> 32));
+    }
 }

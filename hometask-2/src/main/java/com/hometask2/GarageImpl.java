@@ -7,8 +7,10 @@ public class GarageImpl implements Garage {
     private final Map<Long, Owner> owners = new HashMap<>();
     private final Map<Owner, Set<Car>> carsByOwner = new HashMap<>();
     private final Map<String, Set<Car>> carsByBrand = new HashMap<>();
-    private final NavigableMap<Integer, Set<Car>> carsByPower = new TreeMap<>(Collections.reverseOrder());
-    private final NavigableMap<Integer, Set<Car>> carsByMaxVelocity = new TreeMap<>(Collections.reverseOrder());
+    private final TreeSet<Car> carsByPower = new TreeSet<>(Comparator.comparing(Car::getPower).
+            thenComparing(Car::getCarId));
+    private final TreeSet<Car> carsByMaxVelocity = new TreeSet<>(Comparator.comparing(Car::getMaxVelocity)
+            .thenComparing(Car::getCarId).reversed());
 
     @Override
     public Collection<Owner> allCarsUniqueOwners() {
@@ -17,19 +19,17 @@ public class GarageImpl implements Garage {
 
     @Override
     public Collection<Car> topThreeCarsByMaxVelocity() {
-        List<Car> cars = new ArrayList<>();
-        for (var entry : carsByMaxVelocity.entrySet()) {
-            for (Car car : entry.getValue()) {
-                cars.add(car);
-                if (cars.size() == 3) {
-                    break;
-                }
-            }
-            if (cars.size() == 3) {
+        List<Car> top = new ArrayList<>();
+        for (Car car : carsByMaxVelocity) {
+            top.add(car);
+            if (top.size() == 3) {
                 break;
             }
         }
-        return cars;
+        if (top.size() < 3) {
+            throw new IllegalStateException("currently less than 3 cars in total");
+        }
+        return top;
     }
 
     @Override
@@ -39,14 +39,8 @@ public class GarageImpl implements Garage {
 
     @Override
     public Collection<Car> carsWithPowerMoreThan(int power) {
-        List<Car> cars = new ArrayList<>();
-        for (var entry : carsByPower.entrySet()) {
-            if (entry.getKey() <= power) {
-                break;
-            }
-            cars.addAll(entry.getValue());
-        }
-        return cars;
+        return carsByPower.tailSet(new Car(Long.MAX_VALUE, "", "", 0, power, 0),
+                false);
     }
 
     @Override
@@ -56,9 +50,14 @@ public class GarageImpl implements Garage {
 
     @Override
     public int meanOwnersAgeOfCarBrand(String brand) {
-        var ownerIds = carsByBrand.get(brand).stream().mapToLong(Car::getOwnerId).distinct().toArray();
-        int count = ownerIds.length;
-        return Arrays.stream(ownerIds).mapToInt(id -> owners.get(id).getAge()).sum() / count;
+        var meanAgeOption = carsByBrand.get(brand).stream().
+                mapToLong(Car::getOwnerId).
+                map(id -> owners.get(id).getAge()).
+                average();
+        if (meanAgeOption.isEmpty()) {
+            throw new IllegalArgumentException("no cars of this brand");
+        }
+        return (int) Math.round(meanAgeOption.getAsDouble());
     }
 
     @Override
@@ -68,7 +67,11 @@ public class GarageImpl implements Garage {
 
     @Override
     public Car removeCar(long carId) {
+        if (!cars.containsKey(carId)) {
+            throw new IllegalArgumentException("no car with such id");
+        }
         Car car = cars.get(carId);
+        // exists because our operations are consistent
         Owner owner = owners.get(car.getOwnerId());
 
         cars.remove(carId);
@@ -85,17 +88,8 @@ public class GarageImpl implements Garage {
             carsByBrand.remove(brand);
         }
 
-        int power = car.getPower();
-        carsByPower.get(power).remove(car);
-        if (carsByPower.get(power).isEmpty()) {
-            carsByPower.remove(power);
-        }
-
-        int maxVelocity = car.getMaxVelocity();
-        carsByMaxVelocity.get(maxVelocity).remove(car);
-        if (carsByMaxVelocity.get(maxVelocity).isEmpty()) {
-            carsByMaxVelocity.remove(maxVelocity);
-        }
+        carsByPower.remove(car);
+        carsByMaxVelocity.remove(car);
 
         return car;
     }
@@ -104,17 +98,9 @@ public class GarageImpl implements Garage {
     public void addCar(Car car, Owner owner) {
         cars.put(car.getCarId(), car);
         owners.put(owner.getOwnerId(), owner);
-
-        carsByOwner.putIfAbsent(owner, new HashSet<>());
-        carsByOwner.get(owner).add(car);
-
-        carsByBrand.putIfAbsent(car.getBrand(), new HashSet<>());
-        carsByBrand.get(car.getBrand()).add(car);
-
-        carsByPower.putIfAbsent(car.getPower(), new HashSet<>());
-        carsByPower.get(car.getPower()).add(car);
-
-        carsByMaxVelocity.putIfAbsent(car.getMaxVelocity(), new HashSet<>());
-        carsByMaxVelocity.get(car.getMaxVelocity()).add(car);
+        carsByOwner.computeIfAbsent(owner, k -> new HashSet<>()).add(car);
+        carsByBrand.computeIfAbsent(car.getBrand(), k -> new HashSet<>()).add(car);
+        carsByPower.add(car);
+        carsByMaxVelocity.add(car);
     }
 }
