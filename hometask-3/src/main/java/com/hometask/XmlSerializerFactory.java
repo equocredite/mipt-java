@@ -1,127 +1,122 @@
 package com.hometask;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.*;
+import java.text.MessageFormat;
+import java.util.stream.Collectors;
 
 import net.openhft.compiler.CompilerUtils;
 
-public class XmlSerializerFactory<T> implements SerializerFactory<T> {
-    private final Class<T> clazz;
+import static com.hometask.ReflectionUtils.*;
 
-    // source strings for methods that serialize all necessary classes
-    private final Map<Class<?>, String> serializerMethods = new HashMap<>();
-    private static final Set<Class<?>> PRIMITIVE_WRAPPER_TYPES = Set.of(Byte.class, Short.class, Integer.class,
-            Long.class, Float.class, Double.class, Character.class, Boolean.class);
+public class XmlSerializerFactory<T> implements SerializerFactory<T> {
+
+    private final Class<T> clazz;
+    private final Map<Class<?>, String> serializerMethodSources = new HashMap<>();
+
+    private final String serializerClassTemplate;
+    private final String serializerMethodTemplate;
+    private final String serializerMethodLineTemplateImmediate;
+    private final String serializerMethodLineTemplateRecursive;
 
     public XmlSerializerFactory(Class<T> clazz) {
         this.clazz = clazz;
-    }
-
-    private static <U> boolean isImmediatelySerializable(Class<U> clazz) {
-        return clazz.equals(String.class) || clazz.isPrimitive() || PRIMITIVE_WRAPPER_TYPES.contains(clazz);
-    }
-
-    private static String capitalizeFirstLetter(String s) {
-        if (s == null) {
-            return null;
-        }
-        return s.substring(0, 1).toUpperCase() + s.substring(1);
-    }
-
-    private static String buildGetterNameForField(Field field) {
-        Class<?> type = field.getType();
-        String prefix = type.equals(Boolean.class) || type.equals(boolean.class) ? "is" : "get";
-        return prefix + capitalizeFirstLetter(field.getName());
-    }
-
-    // search for valid getters recursively
-    // returns a mapping from field to getter name
-    private static <U> Map<Field, String> findAllGetters(Class<U> clazz) {
-        if (clazz == null || clazz.equals(Object.class)) {
-            return Collections.emptyMap();
-        }
-        Map<Field, String> fieldToGetterName = new HashMap<>(findAllGetters(clazz.getSuperclass()));
-        for (Field field : clazz.getDeclaredFields()) {
-            String getterName = buildGetterNameForField(field);
-            try {
-                Method getter = clazz.getMethod(getterName);
-                fieldToGetterName.put(field, getterName);
-            } catch (NoSuchMethodException ignored) {}
-        }
-        return fieldToGetterName;
-    }
-
-    private <U> void createSerializerMethodForClass(Class<U> clazz) {
-        if (serializerMethods.containsKey(clazz)) {
-            return;
-        }
-        List<Class<?>> serializerMethodsCalledRecursively = new ArrayList<>();
-
-        String simpleClassName = clazz.getSimpleName();
-        String fqClassName = clazz.getCanonicalName();
-        StringBuilder sb = new StringBuilder();
-        sb.append("    private String serialize").append(capitalizeFirstLetter(simpleClassName)).append("(").append(fqClassName).append(" o) {\n")
-                .append("        StringBuilder sb = new StringBuilder();\n");
-        var fieldToGetterName = findAllGetters(clazz);
-        for (var entry : fieldToGetterName.entrySet()) {
-            Field field = entry.getKey();
-            String fieldName = field.getName();
-            Class<?> fieldType = field.getType();
-            String getterName = entry.getValue();
-            sb.append("        sb.append(\"<").append(fieldName).append(">\").append(");
-            String callToGetter = "o." + getterName + "()";
-            if (isImmediatelySerializable(fieldType)) {
-                sb.append("String.valueOf(").append(callToGetter).append(")");
-            } else {
-                sb.append(callToGetter).append(" == null ? null : ");
-                sb.append("serialize").append(capitalizeFirstLetter(fieldType.getSimpleName())).append("(")
-                        .append(callToGetter).append(")");
-                serializerMethodsCalledRecursively.add(fieldType);
-
-            }
-            sb.append(").append(\"</").append(fieldName).append(">\");\n");
-        }
-        sb.append("        return sb.toString();\n    }\n\n");
-
-        serializerMethods.put(clazz, sb.toString());
-        for (var type : serializerMethodsCalledRecursively) {
-            createSerializerMethodForClass(type);
-        }
+        this.serializerClassTemplate = loadTemplate("/templates/serializer_class");
+        this.serializerMethodTemplate = loadTemplate("/templates/serializer_method");
+        this.serializerMethodLineTemplateImmediate = loadTemplate("/templates/serializer_line_immediate");
+        this.serializerMethodLineTemplateRecursive = loadTemplate("/templates/serializer_line_recursive");
     }
 
     @Override
     public Serializer<T> createSerializer() {
-        StringBuilder sb = new StringBuilder();
+        String source = buildSerializerSource();
+        return (Serializer<T>) compileAndInstantiate(source);
+    }
 
+    private String loadTemplate(String filename) {
+        try (InputStream inputStream = getClass().getResourceAsStream(filename);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+            var lines = reader.lines().collect(Collectors.toList());
+            return String.join("\n", lines);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private String buildSerializerSource() {
         String simpleClassName = clazz.getSimpleName();
-        String fqClassName = clazz.getCanonicalName();
-        String serializerClassName = simpleClassName + "ToXmlSerializer";
+        String canonicalClassName = clazz.getCanonicalName();
 
-        sb.append("package com.hometask;\n\n");
+        generateSerializerMethods();
 
-        // class header
-        sb.append("public class ").append(serializerClassName).append(" implements Serializer<")
-                .append(fqClassName).append("> {\n");
-
-        // generate source codes for methods that serialize all necessary classes
-        // and save them to a hashmap
-        createSerializerMethodForClass(clazz);
-
-        for (var methodSource : serializerMethods.values()) {
-            sb.append(methodSource);
+        StringBuilder methods = new StringBuilder();
+        for (var methodSource : serializerMethodSources.values()) {
+            methods.append(methodSource).append("\n\n");
         }
 
-        // method header
-        sb.append("    @Override\n    public String serialize(").append(fqClassName).append(" o").append(") {\n");
-        sb.append("        return serialize").append(simpleClassName).append("(o);\n    }\n}\n");
+        return MessageFormat.format(serializerClassTemplate, simpleClassName, canonicalClassName, methods.toString());
+    }
 
-        String serializerSource = sb.toString();
+    private static <U> boolean isImmediatelySerializable(Class<U> clazz) {
+        return isPrimitiveOrWrapperOrString(clazz);
+    }
 
+    private String buildSerializerMethodLine(Field field, String getterName) {
+        Class<?> fieldType = field.getType();
+        String fieldName = field.getName();
+        String capitalizedFieldTypeName = capitalizeFirstLetter(fieldType.getSimpleName());
+
+        if (isImmediatelySerializable(fieldType)) {
+            return MessageFormat.format(serializerMethodLineTemplateImmediate, fieldName, getterName);
+        } else {
+            return MessageFormat.format(serializerMethodLineTemplateRecursive, fieldName, getterName,
+                    capitalizedFieldTypeName);
+        }
+    }
+
+    private <U> void generateSerializerMethodSourceForClass(Class<U> clazz) {
+        if (serializerMethodSources.containsKey(clazz)) {
+            return;
+        }
+        Set<Class<?>> serializerMethodsCalledRecursively = new HashSet<>();
+
+        String simpleClassName = clazz.getSimpleName();
+        String canonicalClassName = clazz.getCanonicalName();
+
+        StringBuilder lines = new StringBuilder();
+        for (var entry : ReflectionUtils.findValidGetterNames(clazz).entrySet()) {
+            lines.append(buildSerializerMethodLine(entry.getKey(), entry.getValue())).append("\n");
+            serializerMethodsCalledRecursively.add(entry.getKey().getType());
+        }
+
+        String methodBody = MessageFormat.format(serializerMethodTemplate, simpleClassName, canonicalClassName,
+                lines.toString());
+        serializerMethodSources.put(clazz, methodBody);
+
+        for (var type : serializerMethodsCalledRecursively) {
+            if (!isImmediatelySerializable(type)) {
+                generateSerializerMethodSourceForClass(type);
+            }
+        }
+    }
+
+    private void generateSerializerMethods() {
+        generateSerializerMethodSourceForClass(clazz);
+    }
+
+    private Object compileAndInstantiate(String source) {
+        String serializerClassName = clazz.getSimpleName() + "ToXmlSerializer";
         try {
-            return (Serializer<T>) CompilerUtils.CACHED_COMPILER
-                    .loadFromJava("com.hometask." + serializerClassName, serializerSource).getDeclaredConstructor().newInstance();
+            return CompilerUtils.CACHED_COMPILER
+                    .loadFromJava("com.hometask." + serializerClassName, source)
+                    .getDeclaredConstructor()
+                    .newInstance();
         } catch (InvocationTargetException | NoSuchMethodException | ClassNotFoundException | InstantiationException
                 | IllegalAccessException e) {
             e.printStackTrace();
