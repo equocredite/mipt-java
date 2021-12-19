@@ -12,6 +12,25 @@ public class DispatcherImpl implements Dispatcher {
         this.freeTaxis = new ArrayDeque<>(taxis);
     }
 
+    @Override
+    public void notifyAvailable(Taxi taxi) {
+        addToQueue(freeTaxis, taxi);
+    }
+
+    @Override
+    public void placeOrder(Order order) {
+        addToQueue(orders, order);
+    }
+
+    @Override
+    public void run() {
+        while (true) {
+            Taxi taxi = extractFreeTaxi();
+            Order order = extractOrder();
+            taxi.placeOrder(order);
+        }
+    }
+
     private static <E> E pollQueue(Queue<E> queue) {
         synchronized (queue) {
             while (queue.isEmpty()) {
@@ -38,24 +57,5 @@ public class DispatcherImpl implements Dispatcher {
 
     private Order extractOrder() {
         return pollQueue(orders);
-    }
-
-    @Override
-    public void notifyAvailable(Taxi taxi) {
-        addToQueue(freeTaxis, taxi);
-    }
-
-    @Override
-    public void placeOrder(Order order) {
-        addToQueue(orders, order);
-    }
-
-    @Override
-    public void run() {
-        while (true) {
-            Taxi taxi = extractFreeTaxi();
-            Order order = extractOrder();
-            taxi.placeOrder(order);
-        }
     }
 }

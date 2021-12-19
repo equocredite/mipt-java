@@ -13,30 +13,6 @@ public class TaxiImpl implements Taxi {
         this.dispatcher = dispatcher;
     }
 
-    private void executeOrder() {
-        try {
-            TimeUnit.MILLISECONDS.sleep(order.getDuration());
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        synchronized (executedOrders) {
-            executedOrders.add(order);
-        }
-        order = null;
-    }
-
-    private void awaitOrder() {
-        synchronized (this) {
-            while (order == null) {
-                try {
-                    wait();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
-
     @Override
     public void run() {
         while (true) {
@@ -58,6 +34,30 @@ public class TaxiImpl implements Taxi {
     public List<Order> getExecutedOrders() {
         synchronized (executedOrders) {
             return new ArrayList<>(executedOrders);
+        }
+    }
+
+    private void executeOrder() {
+        try {
+            TimeUnit.MILLISECONDS.sleep(order.getDuration());
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        synchronized (executedOrders) {
+            executedOrders.add(order);
+        }
+        order = null;
+    }
+
+    private void awaitOrder() {
+        synchronized (this) {
+            while (order == null) {
+                try {
+                    wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 }
