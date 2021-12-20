@@ -7,9 +7,9 @@ public class GarageImpl implements Garage {
     private final Map<Long, Owner> owners = new HashMap<>();
     private final Map<Owner, Set<Car>> carsByOwner = new HashMap<>();
     private final Map<String, Set<Car>> carsByBrand = new HashMap<>();
-    private final TreeSet<Car> carsByPower = new TreeSet<>(Comparator.comparing(Car::getPower).
+    private final NavigableSet<Car> carsByPower = new TreeSet<>(Comparator.comparing(Car::getPower).
             thenComparing(Car::getCarId));
-    private final TreeSet<Car> carsByMaxVelocity = new TreeSet<>(Comparator.comparing(Car::getMaxVelocity)
+    private final NavigableSet<Car> carsByMaxVelocity = new TreeSet<>(Comparator.comparing(Car::getMaxVelocity)
             .thenComparing(Car::getCarId).reversed());
 
     @Override
