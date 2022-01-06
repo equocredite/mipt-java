@@ -41,7 +41,7 @@ public class XmlSerializerFactory<T> implements SerializerFactory<T> {
     private String loadTemplate(String filename) {
         try (InputStream inputStream = getClass().getResourceAsStream(filename);
              BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
-            var lines = reader.lines().collect(Collectors.toList());
+            var lines = reader.lines().collect(Collectors.joining(""));
             return String.join("\n", lines);
         } catch (IOException e) {
             e.printStackTrace();
